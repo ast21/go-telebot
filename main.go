@@ -25,7 +25,7 @@ type User struct {
 func main() {
 	// this Pings the database trying to connect
 	// use sqlx.Open() for sql.Open() semantics
-	db, err := sqlx.Connect("postgres", env("POSTGRES_DSN"))
+	db, err := sqlx.Connect("postgres", env("DSN"))
 	if err != nil {
 		log.Fatalln(err)
 	}
