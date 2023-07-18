@@ -6,6 +6,7 @@ import (
 	"github.com/joho/godotenv"
 	"log"
 	"os"
+	"telebot/data"
 	"time"
 
 	tele "gopkg.in/telebot.v3"
@@ -13,14 +14,7 @@ import (
 	_ "github.com/lib/pq"
 )
 
-type User struct {
-	ID         uint64    `db:"id"`
-	TelegramId string    `db:"telegram_id"`
-	FirstName  string    `db:"first_name"`
-	LastName   string    `db:"last_name"`
-	CreatedAt  time.Time `db:"created_at"`
-	UpdatedAt  time.Time `db:"updated_at"`
-}
+type User data.User
 
 func main() {
 	// this Pings the database trying to connect
@@ -35,7 +29,6 @@ func main() {
 	if err != nil {
 		log.Fatalln(err)
 	}
-	fmt.Println(users)
 
 	pref := tele.Settings{
 		Token:  env("TOKEN"),
