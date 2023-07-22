@@ -20,6 +20,7 @@ type Course struct {
 
 type Question struct {
 	ID        uint64     `db:"id"`
+	CourseId  uint64     `db:"course_id"`
 	Title     string     `db:"title"`
 	CreatedAt *time.Time `db:"created_at"`
 	UpdatedAt *time.Time `db:"updated_at"`

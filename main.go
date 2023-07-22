@@ -15,11 +15,14 @@ import (
 )
 
 type User data.User
+type Course data.Course
+type Question data.Question
+type QuestionAnswer data.QuestionAnswer
+type UserAnswer data.UserAnswer
+
+var db, err = sqlx.Connect("postgres", env("DSN"))
 
 func main() {
-	// this Pings the database trying to connect
-	// use sqlx.Open() for sql.Open() semantics
-	db, err := sqlx.Connect("postgres", env("DSN"))
 	if err != nil {
 		log.Fatalln(err)
 	}
@@ -48,6 +51,18 @@ func main() {
 	// All the text messages that weren't
 	// captured by existing handlers.
 	b.Handle(tele.OnText, func(c tele.Context) error {
+		courses := getAllCourses()
+
+		for i := 0; i < len(courses); i++ {
+			if c.Text() == courses[i].Title {
+				question, err := getRandomQuestionByCourseId(courses[i].ID)
+				if err != nil {
+					return c.Send("Вопросы еще не созданы, попробуйте чуть позже")
+				}
+				return c.Send(question.Title)
+			}
+		}
+
 		return c.Send(c.Text())
 	})
 
@@ -57,8 +72,9 @@ func main() {
 		selector = &tele.ReplyMarkup{}
 
 		// Reply buttons.
-		btnHelp     = menu.Text("ℹ Help")
-		btnSettings = menu.Text("⚙ Settings")
+		rows []tele.Row
+		//btnHelp = menu.Text("ℹ Help")
+		//btnSettings = menu.Text("⚙ Settings")
 
 		// Inline buttons.
 		//
@@ -72,46 +88,55 @@ func main() {
 		btnNext = selector.Data("Next", "next")
 	)
 
-	menu.Reply(
-		menu.Row(btnHelp),
-		menu.Row(btnSettings),
-	)
 	selector.Inline(
 		selector.Row(btnPrev, btnNext),
 	)
 
 	b.Handle("/start", func(c tele.Context) error {
-		sender := c.Sender()
+		user := getUserByTelegramId(c)
 
-		user := User{}
-		err = db.Get(&user, "SELECT * FROM users WHERE telegram_id = $1", sender.ID)
+		question := Question{}
+		sql := `                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            SELECT
+            q.id            as "id",
+            q.title         as "title",
+            q.created_at    as "created_at",
+            q.updated_at    as "updated_at",
+
+            c.id            as "course.id",
+            c.title         as "course.title",
+            c.created_at    as "course.created_at",
+            c.updated_at    as "course.updated_at"
+            FROM questions as q JOIN courses as c ON q.course_id = c.id
+            LIMIT 1
+        `
+		err = db.Get(&question, sql)
 		if err != nil {
 			fmt.Println(err)
+		}
+		fmt.Println(question)
+		fmt.Println(question.Title)
+		fmt.Println(question.Course.Title)
 
-			tx := db.MustBegin()
-			tx.MustExec("INSERT INTO users (telegram_id, first_name, last_name) VALUES ($1, $2, $3)", sender.ID, sender.FirstName, sender.LastName)
-			err := tx.Commit()
+		//fmt.Println(user)
 
-			if err != nil {
-				log.Fatalln(err)
-			}
+		var ()
 
-			err = db.Get(&user, "SELECT * FROM users WHERE telegram_id = $1", sender.ID)
-			if err != nil {
-				log.Fatalln(err)
-			}
+		courses := getAllCourses()
+		rows = []tele.Row{}
+		for i := 0; i < len(courses); i++ {
+			rows = append(rows, menu.Row(menu.Text(courses[i].Title)))
 		}
 
-		fmt.Println(user)
+		menu.Reply(rows...)
 
-		welcome := fmt.Sprintf("Hello %s %s! I am Learning Assistant. Welcome!", user.FirstName, user.LastName)
-		return c.Send(welcome, menu)
+		welcomeText := fmt.Sprintf("Hello %s %s! I am Learning Assistant. Welcome!", user.FirstName, user.LastName)
+		return c.Send(welcomeText, menu)
 	})
 
 	// On reply button pressed (message)
-	b.Handle(&btnHelp, func(c tele.Context) error {
-		return c.Edit("Here is some help: ...")
-	})
+	//b.Handle(&btnHelp, func(c tele.Context) error {
+	//	return c.Edit("Here is some help: ...")
+	//})
 
 	// On inline button pressed (callback)
 	b.Handle(&btnPrev, func(c tele.Context) error {
@@ -127,4 +152,66 @@ func env(key string) string {
 		log.Fatalf("Error loading .env file")
 	}
 	return os.Getenv(key)
+}
+
+func printSlice(s []tele.Row) {
+	fmt.Printf("len=%d cap=%d %v\n", len(s), cap(s), s)
+}
+
+func getUserByTelegramId(c tele.Context) User {
+	sender := c.Sender()
+	user := User{}
+
+	err = db.Get(&user, "SELECT * FROM users WHERE telegram_id = $1", sender.ID)
+	if err != nil {
+		fmt.Println(err)
+
+		tx := db.MustBegin()
+		tx.MustExec("INSERT INTO users (telegram_id, first_name, last_name) VALUES ($1, $2, $3)", sender.ID, sender.FirstName, sender.LastName)
+		err := tx.Commit()
+
+		if err != nil {
+			log.Fatalln(err)
+		}
+
+		err = db.Get(&user, "SELECT * FROM users WHERE telegram_id = $1", sender.ID)
+		if err != nil {
+			log.Fatalln(err)
+		}
+	}
+
+	return user
+}
+
+func getAllCourses() []Course {
+	var courses []Course
+	err = db.Select(&courses, `SELECT * FROM courses`)
+	if err != nil {
+		log.Fatalln(err)
+	}
+
+	return courses
+}
+
+func getAllQuestionByCourseId(courseId uint64) []Question {
+	var questions []Question
+	err = db.Select(&questions, `SELECT * FROM "questions" WHERE "question_id" = $1`, courseId)
+	if err != nil {
+		log.Fatalln(err)
+	}
+
+	return questions
+}
+
+func getRandomQuestionByCourseId(courseId uint64) (Question, error) {
+	var question Question
+
+	err = db.Get(&question, `
+        SELECT * FROM "questions"
+            WHERE "course_id" = $1
+            ORDER BY RANDOM()
+            LIMIT 1
+    `, courseId)
+
+	return question, err
 }
